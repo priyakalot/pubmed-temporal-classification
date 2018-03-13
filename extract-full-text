@@ -1,0 +1,78 @@
+from Bio import Entrez
+from bs4 import BeautifulSoup
+import re
+import pickle
+import random
+import time
+from lxml import etree
+from io import StringIO
+
+# load in text file of PMC ids
+file = open(r".\human_CCR_PMC_IDs_Dec_15_2017.txt","r").read()
+PMC_ids = file.split('\n')
+
+PMC_ids = list(set(PMC_ids))
+
+random.seed(1)
+random.shuffle(PMC_ids)
+# prep ids by removing "PMC"
+id_list = [id[3:len(id)] for id in PMC_ids]
+
+# function to extract full text from PubMed
+def extract_full_text(PMC_ids):
+    
+    Entrez.email = 'myemail@email.com'
+    
+    search_results = Entrez.read(Entrez.epost("pmc", id=",".join(PMC_ids)))
+
+    count = len(id_list) - 1
+    batch_size = len(id_list)
+
+    docs=((Entrez.efetch(db='pmc',restart=0,
+                         retmax=batch_size,
+                         retmode='xml',
+                         webenv=search_results['WebEnv'],
+                         query_key=search_results['QueryKey'])).read())
+    
+    # dictionary to save PMC ids and text
+    full_text = {}
+
+    # get indices of starts of individual case reports
+    doc_starts = [m.start(0) for m in re.finditer(r"<article .*?>.*?",docs)]
+
+    doc_split = []
+    for i, elem in enumerate(doc_starts):
+        if i==len(doc_starts)-1:
+           doc_split.append(docs[elem:len(docs)-1])
+        else:
+           doc_split.append(docs[elem:doc_starts[i+1]])
+    
+    for doc in doc_split:
+        soup = BeautifulSoup(doc,'lxml')
+        all_ids = soup.find_all('article-id')
+        pmc_id_text = re.findall(r'<article-id pub-id-type="pmc">(.*)</article-id>',str(soup))[0]
+        pmc_id_text = 'PMC' + pmc_id_text #id from XML has only digits, not the "PMC" at the beginning
+
+        text = soup.find_all('p')
+
+        text = [str(paragraph) for paragraph in text]
+        text = "\n ".join(text)
+        text = re.sub(r'<.*?>','',text) # remove tags like <p>, <xref>, etc.
+
+    
+        full_text[pmc_id_text[3:len(pmc_id_text)]] = text
+        if(len(full_text) % 1000 == 0):
+            print("Extracted ",len(full_text)," PMC articles")
+            
+    return(full_text)  
+
+# use function in while loop to get over PMC's 10,000 extraction limit
+myFile = {}
+while(len(myFile)<len(id_list)):
+    
+    newfiles = extract_full_text(id_list)
+    myFile.update(newfiles)
+    
+    for my_id in id_list:
+        if my_id in myFile.keys():
+            id_list.remove(my_id)
