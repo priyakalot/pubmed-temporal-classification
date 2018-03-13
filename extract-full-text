@@ -68,7 +68,8 @@ def extract_full_text(PMC_ids):
 
 # use function in while loop to get over PMC's 10,000 extraction limit
 myFile = {}
-while(len(myFile)<len(id_list)):
+length_id_list = len(id_list)
+while(len(myFile)<length_id_list):
     
     newfiles = extract_full_text(id_list)
     myFile.update(newfiles)
